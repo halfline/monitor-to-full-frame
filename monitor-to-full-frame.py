@@ -163,22 +163,7 @@ def stabilize_image(image, transformations_buffer, max_transformations, state):
 
     return stabilized_image, state
 
-def draw_audio_bars(image, width, height, audio_levels, timestamp):
-    with condition:
-        while not audio_levels or timestamp > audio_levels.peekitem(-1)[0]:
-            condition.wait()
-
-    # Find the audio data for this frame
-    index = audio_levels.bisect_left(timestamp)
-
-    if index != 0 and (index == len(audio_levels) or audio_levels.iloc[index] - timestamp > timestamp - audio_levels.iloc[index - 1]):
-        index -= 1
-    closest_timestamp = audio_levels.iloc[index]
-    audio_level = audio_levels[closest_timestamp]
-    minimum_audio_level = min(list(audio_levels.values()))
-    maximum_audio_level = max(list(audio_levels.values()))
-    audio_level = (audio_level - minimum_audio_level) / (maximum_audio_level - minimum_audio_level)
-
+def draw_audio_bars(image, width, height, audio_level, minimum_audio_level, maximum_audio_level):
     audio_bars_width = int(0.10 * width)
     audio_bars_height = int(0.025 * height)
     audio_bars_image = np.zeros((audio_bars_height, audio_bars_width, 3), dtype=np.uint8)
@@ -205,6 +190,40 @@ def draw_audio_bars(image, width, height, audio_levels, timestamp):
     image[y_offset:y_offset+audio_bars_height, x_offset:x_offset+audio_bars_width] = audio_bars_image
 
     return image
+
+def get_audio_levels_for_timestamp(audio_levels, timestamp, state):
+    with condition:
+        while not audio_levels or timestamp > audio_levels.peekitem(-1)[0]:
+            condition.wait()
+
+    index = audio_levels.bisect_left(timestamp)
+
+    if index != 0 and (index == len(audio_levels) or audio_levels.iloc[index] - timestamp > timestamp - audio_levels.iloc[index - 1]):
+        index -= 1
+
+    closest_timestamp = audio_levels.iloc[index]
+    audio_level = audio_levels[closest_timestamp]
+
+    if state is None:
+        state = {'minimum-audio-level': audio_level, 'maximum-audio-level': audio_level }
+
+    minimum_audio_level = min(state['minimum-audio-level'], min(list(audio_levels.values())))
+    maximum_audio_level = max(state['maximum-audio-level'], max(list(audio_levels.values())))
+
+    if maximum_audio_level != minimum_audio_level:
+        audio_level = (audio_level - minimum_audio_level) / (maximum_audio_level - minimum_audio_level)
+    else:
+        audio_level = 0.0
+
+    stale_indices = list(audio_levels.islice(stop=index))
+
+    for index in stale_indices:
+        del audio_levels[index]
+
+    state['minimum-audio-level'] = minimum_audio_level
+    state['maximum-audio-level'] = maximum_audio_level
+
+    return (audio_level, minimum_audio_level, maximum_audio_level, state)
 
 Gst.init(None)
 
@@ -234,6 +253,8 @@ cropping_rects = []
 transformation_matrices = []
 transformations_buffer = deque(maxlen=15)
 stabilization_state = None
+audio_state = None
+
 try:
     while success:
         success, pristine_image = video.read()
@@ -250,7 +271,11 @@ try:
             image = transform_image_to_be_axis_aligned(image, width, height, transformation_matrices, number_of_frames_to_smooth)
 
             timestamp = video.get(cv2.CAP_PROP_POS_MSEC) * 1e6
-            image = draw_audio_bars(image, width, height, audio_levels, timestamp);
+
+            audio_level, minimum_audio_level, maximum_audio_level, audio_state = get_audio_levels_for_timestamp (audio_levels, timestamp, audio_state)
+
+            image = draw_audio_bars(image, width, height, audio_level, minimum_audio_level, maximum_audio_level);
+
         except Exception as e:
             print(e)
             traceback.print_exc()
