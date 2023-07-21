@@ -258,11 +258,13 @@ video = cv2.VideoCapture(input_file)
 success = video.isOpened()
 
 if success:
-    fps = int(video.get(cv2.CAP_PROP_FPS))
+    fps = video.get(cv2.CAP_PROP_FPS)
     width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
     output = cv2.VideoWriter(f'appsrc ! videoconvert ! x264enc ! mpegtsmux ! filesink location={output_file}', cv2.VideoWriter_fourcc(*'x264'), fps, (width,height), isColor=True)
     success = output.isOpened()
+
+    fps = int(fps)
 
 audio_levels = SortedDict()
 condition = threading.Condition()
