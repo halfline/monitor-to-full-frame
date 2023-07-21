@@ -234,7 +234,7 @@ def get_audio_levels_for_timestamp(audio_levels, timestamp, state):
 Gst.init(None)
 
 output = None
-video = cv2.VideoCapture(sys.argv[1])
+video = cv2.VideoCapture(input_file)
 
 success = video.isOpened()
 
