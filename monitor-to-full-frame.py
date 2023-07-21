@@ -12,6 +12,7 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib, GObject
 import queue
 import sys
+import json
 
 input_file = sys.argv[1] if len(sys.argv) > 1 else 'input.mp4'
 output_file = sys.argv[2] if len(sys.argv) > 2 else 'output.mp4'
@@ -37,6 +38,14 @@ def on_level(bus, message, audio_levels, condition):
         with condition:
             condition.notify_all()
     return True
+
+def get_rotation(video_file):
+    command = ['exiftool', '-Rotation', '-json', video_file]
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+
+    metadata = json.loads(stdout)[0]
+    return int(metadata.get('Rotation'))
 
 def extract_audio(audio_levels, condition):
     print("Generating audio waveform data")
@@ -118,6 +127,16 @@ def transform_image_to_be_axis_aligned(image, width, height, transformation_matr
     corrected_image = cv2.warpPerspective(image, average_matrix, (width, height))
 
     return corrected_image
+
+def rotate_image (image, rotation):
+    if rotation == 180:
+        image = cv2.rotate (image, cv2.ROTATE_180)
+    elif rotation == 90:
+        image = cv2.rotate (image, cv2.ROTATE_90_CLOCKWISE)
+    elif rotation == 270:
+        image = cv2.rotate (image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+    return image
 
 def stabilize_image(image, transformations_buffer, max_transformations, state):
     orb = cv2.ORB_create()
@@ -257,9 +276,15 @@ i = 0
 rotation_matrices = []
 cropping_rects = []
 transformation_matrices = []
-transformations_buffer = deque(maxlen=15)
+transformations_buffer = deque(maxlen=fps)
 stabilization_state = None
 audio_state = None
+
+try:
+    rotation = get_rotation(input_file);
+except Exception as e:
+    print(e)
+    rotation = 0
 
 try:
     while success:
@@ -271,6 +296,7 @@ try:
         try:
             print("Drawing frame " + str(i));
             image = pristine_image
+            image = rotate_image (image, rotation)
             #image = draw_biggest_object (image)
             number_of_frames_to_smooth=fps
             image, stabilization_state = stabilize_image (image, transformations_buffer, number_of_frames_to_smooth, stabilization_state)
