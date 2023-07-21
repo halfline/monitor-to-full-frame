@@ -15,17 +15,18 @@ import sys
 
 input_file = sys.argv[1] if len(sys.argv) > 1 else 'input.mp4'
 output_file = sys.argv[2] if len(sys.argv) > 2 else 'output.mp4'
+audio_loop = GLib.MainLoop()
 
-def on_message(bus, message, loop):
+def on_message(bus, message):
     if message.type == Gst.MessageType.EOS:
-        loop.quit()
+        audio_loop.quit()
     elif message.type == Gst.MessageType.WARNING:
         err, debug = message.parse_warning()
         print('Warning: %s' % err, debug)
     elif message.type == Gst.MessageType.ERROR:
         err, debug = message.parse_error()
         print('Error: %s' % err, debug)
-        loop.quit()
+        audio_loop.quit()
     return True
 
 def on_level(bus, message, audio_levels, condition):
@@ -40,17 +41,16 @@ def on_level(bus, message, audio_levels, condition):
 def extract_audio(audio_levels, condition):
     print("Generating audio waveform data")
 
-    loop = GLib.MainLoop()
     pipeline = Gst.parse_launch(f'filesrc location={input_file} ! decodebin ! audioconvert ! audio/x-raw,channels=1 ! level ! fakesink')
 
     bus = pipeline.get_bus()
     bus.add_signal_watch()
-    bus.connect('message', on_message, loop)
+    bus.connect('message', on_message)
     bus.connect('message::element', on_level, audio_levels, condition)
 
     pipeline.set_state(Gst.State.PLAYING)
     try:
-        loop.run()
+        audio_loop.run()
     except:
         pass
     pipeline.set_state(Gst.State.NULL)
@@ -289,3 +289,7 @@ except:
 
 if output:
     output.release()
+
+if audio_loop.is_running():
+    audio_loop.quit()
+thread.join()
