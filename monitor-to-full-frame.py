@@ -55,6 +55,9 @@ def extract_audio(audio_levels, condition):
         pass
     pipeline.set_state(Gst.State.NULL)
 
+    with condition:
+        condition.notify_all()
+
 def order_points(points):
     center = np.mean(points, axis=0)
     angles = np.arctan2(points[:,1] - center[1], points[:,0] - center[0])
@@ -196,6 +199,9 @@ def get_audio_levels_for_timestamp(audio_levels, timestamp, state):
         while not audio_levels or timestamp > audio_levels.peekitem(-1)[0]:
             condition.wait()
 
+    if not audio_levels or timestamp > audio_levels.peekitem(-1)[0]:
+        raise Exception("No audio frames left")
+
     index = audio_levels.bisect_left(timestamp)
 
     if index != 0 and (index == len(audio_levels) or audio_levels.iloc[index] - timestamp > timestamp - audio_levels.iloc[index - 1]):
@@ -272,9 +278,9 @@ try:
 
             timestamp = video.get(cv2.CAP_PROP_POS_MSEC) * 1e6
 
-            audio_level, minimum_audio_level, maximum_audio_level, audio_state = get_audio_levels_for_timestamp (audio_levels, timestamp, audio_state)
-
-            image = draw_audio_bars(image, width, height, audio_level, minimum_audio_level, maximum_audio_level);
+            if audio_loop.is_running():
+                audio_level, minimum_audio_level, maximum_audio_level, audio_state = get_audio_levels_for_timestamp (audio_levels, timestamp, audio_state)
+                image = draw_audio_bars(image, width, height, audio_level, minimum_audio_level, maximum_audio_level);
 
         except Exception as e:
             print(e)
